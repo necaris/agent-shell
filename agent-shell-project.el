@@ -36,8 +36,31 @@
 (declare-function projectile-project-name "projectile")
 (declare-function projectile-current-project-files "projectile")
 
+(defvar agent-shell-list-files-depth 1
+  "Maximum directory depth for file completion outside a project.
+Set to 0 to disable the fallback entirely.")
+
+(defun agent-shell--should-descend (max-depth root dir)
+  "Return non-nil if DIR should be descended into within MAX-DEPTH levels of ROOT."
+  (let* ((rel (string-remove-prefix root dir))
+         (current-depth (length (seq-filter
+                                 (lambda (s) (not (string-empty-p s)))
+                                 (file-name-split rel)))))
+    (< current-depth max-depth)))
+
+(defun agent-shell--directory-files (dir max-depth)
+  "List files under DIR, up to MAX-DEPTH levels."
+  (let ((root (file-name-as-directory (expand-file-name dir))))
+    (directory-files-recursively
+     root
+     directory-files-no-dot-files-regexp
+     nil
+     (apply-partially #'agent-shell--should-descend max-depth root)
+     nil)))
+
 (defun agent-shell--project-files ()
-  "Get project files using projectile or project.el."
+  "Get project files using `projectile', `project.el'.
+Fall back to `agent-shell-cwd' if not in a detected project."
   (cond
    ((and (boundp 'projectile-mode)
          projectile-mode
@@ -52,7 +75,8 @@
       (mapcar (lambda (f)
                 (string-remove-prefix root f))
               (project-files proj))))
-   (t nil)))
+   ((> agent-shell-list-files-depth 0)
+    (agent-shell--directory-files (agent-shell-cwd) agent-shell-list-files-depth))))
 
 (defcustom agent-shell-cwd-function nil
   "When non-nil, a function called to determine the shell's CWD.
